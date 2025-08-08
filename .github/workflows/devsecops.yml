@@ -1,0 +1,108 @@
+name: DevSecOps Azure VM Workflow
+
+on:
+  workflow_dispatch:
+
+jobs:
+  code-scan:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Run Checkov (Terraform Security Scan)
+        uses: bridgecrewio/checkov-action@v12
+        with:
+          directory: ./infra
+
+  terraform-deploy:
+    needs: code-scan
+    runs-on: ubuntu-latest
+    outputs:
+      vm_ip: ${{ steps.output_ip.outputs.vm_ip }}
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Setup Terraform
+        uses: hashicorp/setup-terraform@v3
+
+      - name: Terraform Init with Remote Backend
+        working-directory: ./infra
+        run: terraform init
+
+      - name: Terraform Apply
+        working-directory: ./infra
+        run: terraform apply -auto-approve
+
+      - name: Output Public IP
+        id: output_ip
+        working-directory: ./infra
+        run: |
+          echo "vm_ip=$(terraform output -raw public_ip)" >> $GITHUB_OUTPUT
+
+  deploy-web-app:
+    needs: terraform-deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
+
+      - name: Get VM Password from Key Vault
+        id: kv
+        uses: azure/get-keyvault-secrets@v1
+        with:
+          keyvault: ntmskv323
+          secrets: webvm-password
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Create Target Folder on VM
+        run: |
+          sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no azureuser@${{ needs.terraform-deploy.outputs.vm_ip }} "mkdir -p /tmp/site"
+
+      - name: Upload Web Site
+        uses: appleboy/scp-action@v0.1.4
+        with:
+          host: ${{ needs.terraform-deploy.outputs.vm_ip }}
+          username: azureuser
+          password: ${{ steps.kv.outputs.webvm-password }}
+          source: "./app/*"
+          target: "/tmp/site"
+
+      - name: Restart NGINX
+        run: |
+          sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no azureuser@${{ needs.terraform-deploy.outputs.vm_ip }} "sudo systemctl restart nginx"
+
+  owasp-scan:
+    needs: deploy-web-app
+    runs-on: ubuntu-latest
+    steps:
+      - name: Install OWASP ZAP CLI
+        run: |
+          sudo apt-get update && sudo apt-get install -y snapd
+          sudo snap install zaproxy --classic
+
+      - name: Run OWASP ZAP Baseline Scan
+        run: |
+          timestamp=$(date '+%Y-%m-%d-%H-%M-%S')
+          mkdir -p reports
+          zaproxy -cmd -quickurl http://${{ needs.terraform-deploy.outputs.vm_ip }} -quickout reports/owasp-scan-report-$timestamp.html
+
+      - name: Upload Report to Azure Storage
+        uses: azure/CLI@v1
+        with:
+          azcliversion: 2.30.0
+          inlineScript: |
+            az login --service-principal -u ${{ secrets.AZURE_CLIENT_ID }} -p ${{ secrets.AZURE_CLIENT_SECRET }} --tenant ${{ secrets.AZURE_TENANT_ID }}
+            az storage blob upload \
+              --account-name ntmsexamsa \
+              --container-name reports \
+              --file reports/owasp-scan-report-$(date '+%Y-%m-%d-%H-%M-%S').html \
+              --name owasp-scan-report-$(date '+%Y-%m-%d-%H-%M-%S').html \
+              --auth-mode key \
+              --account-key ${{ secrets.STORAGE_KEY }}
