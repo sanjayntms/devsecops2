@@ -21,7 +21,7 @@ jobs:
   #         directory: ./infra
 
   terraform-deploy:
-  #    needs: code-scan
+    needs: code-scan
     runs-on: ubuntu-latest
     outputs:
       vm_ip: ${{ steps.output_ip.outputs.vm_ip }}
