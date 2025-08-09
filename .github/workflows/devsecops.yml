@@ -7,6 +7,8 @@ env:
   RESOURCE_GROUP: vm-devsecops-rg
   KEYVAULT_NAME: ntmsdevsecops-kv
   LOCATION: centralIndia
+  SA: ntmsla1group9185
+
 
 jobs:
   code-scan:
@@ -53,7 +55,8 @@ jobs:
 
       - name: Terraform Init with Remote Backend
         working-directory: ./infra
-        run: terraform init -backend-config="resource_group_name=$RESOURCE_GROUP" -backend-config="storage_account_name=devsecopsstate" -backend-config="container_name=tfstate" -backend-config="key=terraform.tfstate"
+        run: terraform init -backend-config="resource_group_name=$RESOURCE_GROUP" -backend-config="storage_account_name=ntmsla1group9185
+             " -backend-config="container_name=tfstate" -backend-config="key=terraform.tfstate"
 
       - name: Terraform Apply
         working-directory: ./infra
@@ -129,7 +132,7 @@ jobs:
           inlineScript: |
             timestamp=$(date '+%Y-%m-%d-%H-%M-%S')
             az storage blob upload \
-              --account-name ntmsexamsa \
+              --account-name ntmsla1group9185  \
               --container-name reports \
               --file reports/owasp-scan-report-$timestamp.html \
               --name owasp-scan-report-$timestamp.html \
