@@ -59,7 +59,12 @@ jobs:
 
       - name: Terraform Apply
         working-directory: ./infra
-        run: terraform apply -auto-approve
+        run: |
+          terraform apply -auto-approve \
+          -var "resource_group_name=$RESOURCE_GROUP" \
+          -var "storage_account_name=$SA" \
+          -var "keyvault_name=$KEYVAULT_NAME" \
+          -var "location=$LOCATION"
 
       - name: Output Public IP
         id: output_ip
