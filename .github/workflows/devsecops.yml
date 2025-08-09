@@ -3,6 +3,11 @@ name: DevSecOps Azure VM Workflow
 on:
   workflow_dispatch:
 
+env:
+  RESOURCE_GROUP: vm-devsecops-rg
+  KEYVAULT_NAME: ntmsdevsecops-kv
+  LOCATION: centralIndia
+
 jobs:
   code-scan:
     runs-on: ubuntu-latest
@@ -32,9 +37,15 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
+      - name: Create Key Vault and Secret (Idempotent)
+        run: |
+          az group create --name $RESOURCE_GROUP --location $LOCATION
+          az keyvault create --name $KEYVAULT_NAME --resource-group $RESOURCE_GROUP --location $LOCATION || true
+          az keyvault secret set --vault-name $KEYVAULT_NAME --name webvm-password --value ${{ secrets.VM_PASSWORD }}
+
       - name: Terraform Init with Remote Backend
         working-directory: ./infra
-        run: terraform init
+        run: terraform init -backend-config="resource_group_name=$RESOURCE_GROUP" -backend-config="storage_account_name=devsecopsstate" -backend-config="container_name=tfstate" -backend-config="key=terraform.tfstate"
 
       - name: Terraform Apply
         working-directory: ./infra
@@ -53,11 +64,16 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
       - name: Get VM Password from Key Vault
         id: kv
         uses: azure/get-keyvault-secrets@v1
         with:
-          keyvault: ntmskv323
+          keyvault: ${{ env.KEYVAULT_NAME }}
           secrets: webvm-password
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
@@ -93,16 +109,21 @@ jobs:
           mkdir -p reports
           zaproxy -cmd -quickurl http://${{ needs.terraform-deploy.outputs.vm_ip }} -quickout reports/owasp-scan-report-$timestamp.html
 
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
       - name: Upload Report to Azure Storage
         uses: azure/CLI@v1
         with:
           azcliversion: 2.30.0
           inlineScript: |
-            az login --service-principal -u ${{ secrets.AZURE_CLIENT_ID }} -p ${{ secrets.AZURE_CLIENT_SECRET }} --tenant ${{ secrets.AZURE_TENANT_ID }}
+            timestamp=$(date '+%Y-%m-%d-%H-%M-%S')
             az storage blob upload \
               --account-name ntmsexamsa \
               --container-name reports \
-              --file reports/owasp-scan-report-$(date '+%Y-%m-%d-%H-%M-%S').html \
-              --name owasp-scan-report-$(date '+%Y-%m-%d-%H-%M-%S').html \
+              --file reports/owasp-scan-report-$timestamp.html \
+              --name owasp-scan-report-$timestamp.html \
               --auth-mode key \
               --account-key ${{ secrets.STORAGE_KEY }}
