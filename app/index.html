@@ -1,0 +1,256 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>NTMS Azure Cloud Batch</title>
+    <!-- Google Fonts - Poppins for a modern, clean look -->
+    <link href="https://fonts.googleapis.com/css2?family=Poppins:wght@400;600;700;800&display=swap" rel="stylesheet">
+    <style>
+        /* General Body Styling */
+        body {
+            font-family: 'Poppins', sans-serif;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            justify-content: center;
+            align-items: center;
+            min-height: 100vh;
+            background: linear-gradient(135deg, #001f3f 0%, #0073e6 100%); /* Deep blue to vibrant blue */
+            color: #ffffff;
+            text-align: center;
+            overflow-x: hidden; /* Prevent horizontal scroll */
+        }
+
+        /* Main Container for the content */
+        .container {
+            max-width: 1000px;
+            width: 90%; /* Fluid width */
+            background: rgba(255, 255, 255, 0.1); /* Slightly transparent white */
+            border-radius: 20px;
+            backdrop-filter: blur(10px); /* Glassmorphism effect */
+            -webkit-backdrop-filter: blur(10px);
+            border: 1px solid rgba(255, 255, 255, 0.2); /* Subtle border */
+            padding: 40px;
+            box-shadow: 0 8px 32px 0 rgba(0, 0, 0, 0.37); /* Stronger shadow */
+            animation: fadeIn 1s ease-out; /* Fade in animation */
+        }
+
+        /* Keyframe for fade-in animation */
+        @keyframes fadeIn {
+            from { opacity: 0; transform: translateY(-20px); }
+            to { opacity: 1; transform: translateY(0); }
+        }
+
+        /* Main Title Styling */
+        .main-title {
+            font-size: 4.5em; /* Large font size for impact */
+            font-weight: 800;
+            margin-bottom: 20px;
+            background: linear-gradient(45deg, #00c6ff, #0072ff); /* Bright blue gradient */
+            -webkit-background-clip: text; /* Clip background to text shape */
+            -webkit-text-fill-color: transparent; /* Make text transparent to show gradient */
+            text-shadow: 3px 3px 7px rgba(0, 0, 0, 0.3); /* Soft shadow for depth */
+            animation: textGlow 1.5s ease-in-out infinite alternate; /* Subtle glow animation */
+        }
+
+        /* Keyframe for text glow animation */
+        @keyframes textGlow {
+            from { text-shadow: 3px 3px 7px rgba(0, 0, 0, 0.3); }
+            to { text-shadow: 3px 3px 10px rgba(0, 198, 255, 0.6), -3px -3px 10px rgba(0, 114, 255, 0.6); }
+        }
+
+        /* Subtitle Styling */
+        .subtitle {
+            font-size: 1.6em;
+            font-weight: 600;
+            color: #b3d1ff; /* Lighter blue for contrast */
+            margin-bottom: 50px;
+            animation: slideInLeft 1s ease-out; /* Slide in animation */
+        }
+
+        /* Keyframe for slide-in animation */
+        @keyframes slideInLeft {
+            from { opacity: 0; transform: translateX(-50px); }
+            to { opacity: 1; transform: translateX(0); }
+        }
+
+        /* Card Container - Grid layout for responsiveness */
+        .card-container {
+            display: grid;
+            grid-template-columns: repeat(auto-fit, minmax(280px, 1fr)); /* Flexible columns */
+            gap: 30px; /* Space between cards */
+        }
+
+        /* Individual Card Styling */
+        .card {
+            background: rgba(255, 255, 255, 0.15); /* Slightly more opaque background */
+            border-radius: 18px; /* Slightly more rounded corners */
+            padding: 30px;
+            transition: transform 0.4s ease, box-shadow 0.4s ease, background 0.4s ease; /* Smooth transitions */
+            position: relative;
+            overflow: hidden;
+            border: 1px solid rgba(255, 255, 255, 0.3);
+            display: flex; /* Flexbox for content alignment inside card */
+            flex-direction: column;
+            justify-content: center;
+            align-items: center;
+            height: 220px; /* Fixed height for uniformity */
+            cursor: pointer; /* Indicate interactivity */
+            box-shadow: 0 4px 15px rgba(0, 0, 0, 0.2); /* Initial shadow */
+        }
+
+        /* Hover effect for cards */
+        .card:hover {
+            transform: translateY(-15px) scale(1.05); /* Lift and enlarge on hover */
+            box-shadow: 0 15px 50px rgba(0, 0, 0, 0.5); /* Enhanced shadow */
+            border-color: rgba(255, 255, 255, 0.5); /* Stronger border on hover */
+        }
+
+        /* Pseudo-element for subtle inner glow/shine */
+        .card::before {
+            content: '';
+            position: absolute;
+            top: 0;
+            left: 0;
+            width: 100%;
+            height: 100%;
+            background: linear-gradient(45deg, rgba(255, 255, 255, 0.1), transparent);
+            opacity: 0.8;
+            transition: opacity 0.4s ease;
+            z-index: 0; /* Ensure it's behind content */
+            border-radius: 18px; /* Match card border-radius */
+        }
+
+        .card:hover::before {
+            opacity: 0; /* Hide the subtle shine on hover */
+        }
+
+        /* Card Icon Styling */
+        .card-icon {
+            font-size: 4.5em; /* Larger icons */
+            margin-bottom: 15px;
+            line-height: 1;
+            filter: drop-shadow(2px 2px 4px rgba(0, 0, 0, 0.3)); /* Shadow for icons */
+            position: relative;
+            z-index: 1; /* Ensure icon is above pseudo-element */
+            transition: transform 0.3s ease; /* Icon transition */
+        }
+
+        .card:hover .card-icon {
+            transform: scale(1.1); /* Slightly enlarge icon on hover */
+        }
+
+        /* Card Title Styling */
+        .card-title {
+            font-size: 1.5em; /* Larger title */
+            font-weight: 700;
+            color: #ffffff;
+            margin: 0;
+            position: relative;
+            z-index: 1; /* Ensure title is above pseudo-element */
+        }
+
+        /* Specific card color themes using linear gradients */
+        .card.admin {
+            background: linear-gradient(135deg, #1abc9c, #16a085); /* Turquoise to green */
+        }
+        .card.devops {
+            background: linear-gradient(135deg, #f39c12, #e67e22); /* Orange to dark orange */
+        }
+        .card.security {
+            background: linear-gradient(135deg, #e74c3c, #c0392b); /* Red to dark red */
+        }
+        .card.ai {
+            background: linear-gradient(135deg, #9b59b6, #8e44ad); /* Amethyst to dark violet */
+        }
+
+        /* Media Queries for Responsiveness */
+        @media (max-width: 768px) {
+            .main-title {
+                font-size: 3em; /* Adjust font size for smaller screens */
+            }
+            .subtitle {
+                font-size: 1.2em;
+            }
+            .container {
+                padding: 30px;
+            }
+            .card {
+                height: 200px; /* Adjust card height for mobile */
+            }
+            .card-icon {
+                font-size: 3.5em;
+            }
+            .card-title {
+                font-size: 1.3em;
+            }
+        }
+
+        @media (max-width: 480px) {
+            .main-title {
+                font-size: 2.5em;
+            }
+            .subtitle {
+                font-size: 1em;
+            }
+            .container {
+                padding: 20px;
+            }
+            .card {
+                height: 180px; /* Further adjust card height for very small screens */
+            }
+            .card-icon {
+                font-size: 3em;
+            }
+            .card-title {
+                font-size: 1.1em;
+            }
+        }
+    </style>
+</head>
+<body>
+    <div class="container">
+        <h1 class="main-title">NTMS Azure Cloud Batch</h1>
+        <p class="subtitle">Empowering your journey in the Microsoft Azure ecosystem.</p>
+
+        <div class="card-container">
+            <!-- Azure Administration and Architect Card -->
+            <div class="card admin">
+                <div class="card-icon">
+                    <!-- Icon representing administration/architecture -->
+                    ⚙️
+                </div>
+                <h3 class="card-title">Azure Administration and Architect</h3>
+            </div>
+
+            <!-- Azure DevOps Card -->
+            <div class="card devops">
+                <div class="card-icon">
+                    <!-- Icon representing DevOps -->
+                    🚀
+                </div>
+                <h3 class="card-title">Azure DevOps</h3>
+            </div>
+
+            <!-- Azure Security Card -->
+            <div class="card security">
+                <div class="card-icon">
+                    <!-- Icon representing Security -->
+                    🔒
+                </div>
+                <h3 class="card-title">Azure Security</h3>
+            </div>
+
+            <!-- Azure AI Card -->
+            <div class="card ai">
+                <div class="card-icon">
+                    <!-- Icon representing AI/Machine Learning -->
+                    🧠
+                </div>
+                <h3 class="card-title">Azure AI</h3>
+            </div>
+        </div>
+    </div>
+</body>
+</html>
