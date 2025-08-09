@@ -15,7 +15,7 @@ data "azurerm_client_config" "current" {}
 
 variable "resource_group_name" { type = string }
 variable "storage_account_name" { type = string }
-variable "keyvault_name" { type = string }
+# variable "keyvault_name" { type = string }
 variable "location" { type = string }
 
 resource "azurerm_resource_group" "rg" {
