@@ -15,13 +15,13 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
- #     - name: Run Checkov (Terraform Security Scan)
- #       uses: bridgecrewio/checkov-action@v12
- #       with:
- #         directory: ./infra
+  #     - name: Run Checkov (Terraform Security Scan)
+  #       uses: bridgecrewio/checkov-action@v12
+  #       with:
+  #         directory: ./infra
 
   terraform-deploy:
-#    needs: code-scan
+  #    needs: code-scan
     runs-on: ubuntu-latest
     outputs:
       vm_ip: ${{ steps.output_ip.outputs.vm_ip }}
@@ -37,10 +37,18 @@ jobs:
       - name: Setup Terraform
         uses: hashicorp/setup-terraform@v3
 
-      - name: Create Key Vault and Secret (Idempotent)
+      - name: Create Resource Group (Idempotent)
         run: |
-          az group create --name $RESOURCE_GROUP --location $LOCATION
-          az keyvault create --name $KEYVAULT_NAME --resource-group $RESOURCE_GROUP --location $LOCATION || true
+          az group show --name $RESOURCE_GROUP || az group create --name $RESOURCE_GROUP --location $LOCATION
+
+      - name: Create Key Vault (Idempotent)
+        run: |
+          az keyvault show --name $KEYVAULT_NAME --resource-group $RESOURCE_GROUP || \
+          az keyvault create --name $KEYVAULT_NAME --resource-group $RESOURCE_GROUP --location $LOCATION
+
+      - name: Set Key Vault Secret (Idempotent)
+        run: |
+          az keyvault secret show --vault-name $KEYVAULT_NAME --name webvm-password || \
           az keyvault secret set --vault-name $KEYVAULT_NAME --name webvm-password --value ${{ secrets.VM_PASSWORD }}
 
       - name: Terraform Init with Remote Backend
