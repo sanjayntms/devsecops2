@@ -137,11 +137,13 @@ jobs:
 
     - name: Run OWASP ZAP Baseline Scan
       run: |
-        timestamp=$(date '+%Y-%m-%d-%H-%M-%S')
         mkdir -p reports
+        timestamp=$(date '+%Y-%m-%d-%H-%M-%S')
         report_file="reports/owasp-scan-report-$timestamp.html"
+        # Run scan
         zaproxy -cmd -quickurl http://${{ needs.terraform-deploy.outputs.vm_ip }} \
                 -quickout "$report_file"
+        # Persist path for later step
         echo "REPORT_FILE=$report_file" >> $GITHUB_ENV
 
     - name: Azure Login
@@ -151,10 +153,13 @@ jobs:
 
     - name: Upload OWASP report to Azure Blob
       run: |
+        if [ ! -f "$REPORT_FILE" ]; then
+          echo "ERROR: Report file '$REPORT_FILE' not found."
+          exit 1
+        fi
         az storage blob upload \
           --account-name $SA \
           --container-name reports \
           --file "$REPORT_FILE" \
-          --name "$(basename $REPORT_FILE)" \
+          --name "$(basename "$REPORT_FILE")" \
           --auth-mode login
-
