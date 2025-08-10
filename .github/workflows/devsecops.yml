@@ -146,16 +146,18 @@ jobs:
         with:
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Upload Report to Azure Storage
-        uses: azure/CLI@v1
-        with:
-          azcliversion: 2.30.0
-          inlineScript: |
-            timestamp=$(date '+%Y-%m-%d-%H-%M-%S')
-            az storage blob upload \
-              --account-name ntmsla1group9185  \
-              --container-name reports \
-              --file reports/owasp-scan-report-$timestamp.html \
-              --name owasp-scan-report-$timestamp.html \
-              --auth-mode key \
-              --account-key ${{ secrets.STORAGE_KEY }}
+      - name: Run OWASP scan
+        run: |
+         mkdir -p reports
+         owasp-scan --output reports/owasp-scan-report.html
+
+      - name: Upload OWASP report to Azure Blob
+        run: |
+         timestamp=$(date '+%Y-%m-%d-%H-%M-%S')
+         az storage blob upload \
+          --account-name $SA \
+          --container-name reports \
+          --file reports/owasp-scan-report.html \
+          --name owasp-scan-report-$timestamp.html \
+          --auth-mode key \
+          --account-key ${{ secrets.STORAGE_ACCOUNT_KEY }}
