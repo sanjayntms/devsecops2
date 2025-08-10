@@ -140,11 +140,10 @@ jobs:
         mkdir -p reports
         timestamp=$(date '+%Y-%m-%d-%H-%M-%S')
         report_file="reports/owasp-scan-report-$timestamp.html"
-        # Run scan
+        echo "REPORT_FILE=$report_file" >> $GITHUB_ENV
         zaproxy -cmd -quickurl http://${{ needs.terraform-deploy.outputs.vm_ip }} \
                 -quickout "$report_file"
-        # Persist path for later step
-        echo "REPORT_FILE=$report_file" >> $GITHUB_ENV
+        ls -l reports
 
     - name: Azure Login
       uses: azure/login@v1
