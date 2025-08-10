@@ -139,9 +139,10 @@ jobs:
       run: |
         timestamp=$(date '+%Y-%m-%d-%H-%M-%S')
         mkdir -p reports
+        report_file="reports/owasp-scan-report-$timestamp.html"
         zaproxy -cmd -quickurl http://${{ needs.terraform-deploy.outputs.vm_ip }} \
-                -quickout reports/owasp-scan-report-$timestamp.html
-        echo "REPORT_FILE=reports/owasp-scan-report-$timestamp.html" >> $GITHUB_ENV
+                -quickout "$report_file"
+        echo "REPORT_FILE=$report_file" >> $GITHUB_ENV
 
     - name: Azure Login
       uses: azure/login@v1
@@ -150,11 +151,10 @@ jobs:
 
     - name: Upload OWASP report to Azure Blob
       run: |
-        timestamp=$(date '+%Y-%m-%d-%H-%M-%S')
         az storage blob upload \
           --account-name $SA \
           --container-name reports \
-          --file $REPORT_FILE \
-          --name owasp-scan-report-$timestamp.html \
+          --file "$REPORT_FILE" \
+          --name "$(basename $REPORT_FILE)" \
           --auth-mode login
 
