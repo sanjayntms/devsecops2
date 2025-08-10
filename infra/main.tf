@@ -26,8 +26,7 @@ variable "location" { type = string }
 
 data "azurerm_resource_group" "rg" {
   name = "vm-devsecops-rg"
-  location = "centralindia"
-}
+ }
 resource "azurerm_key_vault" "kv" {
   name                        = var.keyvault_name
   location                    = data.azurerm_resource_group.rg.location
