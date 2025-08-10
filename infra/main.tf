@@ -71,6 +71,10 @@ resource "azurerm_network_interface" "nic" {
     public_ip_address_id          = azurerm_public_ip.webvm.id
   }
 }
+output "public_ip" {
+  description = "Public IP of the VM"
+  value       = azurerm_public_ip.webvm.ip_address
+}
 
 resource "azurerm_linux_virtual_machine" "webvm" {
   name                = "webvm"
