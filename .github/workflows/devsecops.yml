@@ -100,20 +100,20 @@ jobs:
 
       - name: Create Target Folder on VM
         run: |
-          sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no azureuser@${{ needs.terraform-deploy.outputs.vm_ip }} "mkdir -p /tmp/site"
+          sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} "mkdir -p /tmp/site"
 
       - name: Upload Web Site
         uses: appleboy/scp-action@v0.1.4
         with:
           host: ${{ needs.terraform-deploy.outputs.vm_ip }}
-          username: azureuser
+          username: vmadmin
           password: ${{ steps.kv.outputs.webvm-password }}
           source: "./app/*"
           target: "/tmp/site"
 
       - name: Restart NGINX
         run: |
-          sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no azureuser@${{ needs.terraform-deploy.outputs.vm_ip }} "sudo systemctl restart nginx"
+          sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} "sudo systemctl restart nginx"
 
   owasp-scan:
     needs: deploy-web-app
