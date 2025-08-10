@@ -126,43 +126,52 @@ jobs:
         run: |
           sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} "sudo systemctl restart nginx"
 
+
+
   owasp-scan:
-   needs: deploy-web-app
+   needs: terraform-deploy
    runs-on: ubuntu-latest
    steps:
     - name: Install OWASP ZAP CLI
       run: |
-        sudo apt-get update && sudo apt-get install -y snapd
+        sudo apt-get update && sudo apt-get install -y snapd libtiff5
         sudo snap install zaproxy --classic
 
     - name: Run OWASP ZAP Baseline Scan
       run: |
-       mkdir -p reports
-       timestamp=$(date '+%Y-%m-%d-%H-%M-%S')
-       report_file="reports/owasp-scan-report-$timestamp.html"
-       echo "REPORT_FILE=$report_file" >> $GITHUB_ENV
+        mkdir -p reports
+        timestamp=$(date '+%Y-%m-%d-%H-%M-%S')
+        tmp_report="/tmp/owasp-scan-report-$timestamp.html"
+        final_report="reports/owasp-scan-report-$timestamp.html"
 
-       echo "Running ZAP scan against: http://${{ needs.terraform-deploy.outputs.vm_ip }}"
-       zaproxy -cmd \
-            -quickurl http://${{ needs.terraform-deploy.outputs.vm_ip }} \
-            -quickout "$report_file" \
-            -quickprogress || true
+        echo "Running ZAP scan against: http://${{ needs.terraform-deploy.outputs.vm_ip }}"
 
-       echo "Listing reports directory after scan:"
-       ls -la reports
-       stat "$report_file" || echo "Report file not created"
+        zaproxy -cmd \
+                -quickurl http://${{ needs.terraform-deploy.outputs.vm_ip }} \
+                -quickout "$tmp_report" \
+                -quickprogress || true
 
+        if [ -f "$tmp_report" ]; then
+          mv "$tmp_report" "$final_report"
+          echo "REPORT_FILE=$final_report" >> $GITHUB_ENV
+        else
+          echo "ERROR: Report not generated"
+          exit 1
+        fi
 
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
 
     - name: Upload OWASP report to Azure Blob
       run: |
-        if [ ! -f "$REPORT_FILE" ]; then
-          echo "ERROR: Report file '$REPORT_FILE' not found."
-          exit 1
-        fi
         az storage blob upload \
           --account-name $SA \
           --container-name reports \
           --file "$REPORT_FILE" \
           --name "$(basename "$REPORT_FILE")" \
           --auth-mode login
+      env:
+        SA: ntmsla1group9185
+        REPORT_FILE: ${{ env.REPORT_FILE }}
