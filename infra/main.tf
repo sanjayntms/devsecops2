@@ -35,7 +35,7 @@ data "azurerm_key_vault" "kv" {
 
 data "azurerm_key_vault_secret" "vm_password" {
   name         = "webvm-password"
-  key_vault_id = azurerm_key_vault.kv.id
+  key_vault_id = data.azurerm_key_vault.kv.id
 }
 
 resource "azurerm_virtual_network" "vnet" {
