@@ -98,6 +98,17 @@ jobs:
           secrets: webvm-password
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
+      - name: Install and Configure NGINX
+        run: |
+         sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} <<'EOF'
+          sudo apt-get update -y
+          sudo apt-get install nginx -y
+          sudo systemctl enable nginx
+          sudo ufw allow 80
+          sudo ufw allow 22
+          sudo ufw --force enable
+         EOF
+
       - name: Create Target Folder on VM
         run: |
           sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} "mkdir -p /tmp/site"
