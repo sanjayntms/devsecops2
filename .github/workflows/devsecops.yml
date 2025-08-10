@@ -129,7 +129,7 @@ jobs:
 
 
   owasp-scan:
-   needs: terraform-deploy
+   needs: deploy-web-app
    runs-on: ubuntu-latest
    steps:
     - name: Install OWASP ZAP CLI
