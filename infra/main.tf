@@ -77,6 +77,7 @@ resource "azurerm_linux_virtual_machine" "webvm" {
   resource_group_name = data.azurerm_resource_group.rg.name
   location            = data.azurerm_resource_group.rg.location
   size                = "Standard_B1s"
+  disable_password_authentication = false
   admin_username      = "vmadmin"
   admin_password      = data.azurerm_key_vault_secret.vm_password.value
   network_interface_ids = [
