@@ -58,7 +58,7 @@ resource "azurerm_public_ip" "webvm" {
   name                = "webvm-pip"
   location            = data.azurerm_resource_group.rg.location
   resource_group_name = data.azurerm_resource_group.rg.name
-  allocation_method   = "Dynamic"
+  allocation_method   = "Static"
 }
 
 resource "azurerm_network_interface" "nic" {
