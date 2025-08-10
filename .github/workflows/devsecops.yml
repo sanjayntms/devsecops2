@@ -139,9 +139,8 @@ jobs:
       run: |
         timestamp=$(date '+%Y-%m-%d-%H-%M-%S')
         mkdir -p reports
-        zaproxy -cmd \
-          -quickurl http://${{ needs.terraform-deploy.outputs.vm_ip }} \
-          -quickout reports/owasp-scan-report-$timestamp.html
+        zaproxy -cmd -quickurl http://${{ needs.terraform-deploy.outputs.vm_ip }} \
+                -quickout reports/owasp-scan-report-$timestamp.html
         echo "REPORT_FILE=reports/owasp-scan-report-$timestamp.html" >> $GITHUB_ENV
 
     - name: Azure Login
@@ -157,6 +156,5 @@ jobs:
           --container-name reports \
           --file $REPORT_FILE \
           --name owasp-scan-report-$timestamp.html \
-          --auth-mode key \
-          --account-key ${{ secrets.STORAGE_ACCOUNT_KEY }}
+          --auth-mode login
 
