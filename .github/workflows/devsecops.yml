@@ -127,37 +127,36 @@ jobs:
           sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} "sudo systemctl restart nginx"
 
   owasp-scan:
-    needs: deploy-web-app
-    runs-on: ubuntu-latest
-    steps:
-      - name: Install OWASP ZAP CLI
-        run: |
-          sudo apt-get update && sudo apt-get install -y snapd
-          sudo snap install zaproxy --classic
+   needs: deploy-web-app
+   runs-on: ubuntu-latest
+   steps:
+    - name: Install OWASP ZAP CLI
+      run: |
+        sudo apt-get update && sudo apt-get install -y snapd
+        sudo snap install zaproxy --classic
 
-      - name: Run OWASP ZAP Baseline Scan
-        run: |
-          timestamp=$(date '+%Y-%m-%d-%H-%M-%S')
-          mkdir -p reports
-          zaproxy -cmd -quickurl http://${{ needs.terraform-deploy.outputs.vm_ip }} -quickout reports/owasp-scan-report-$timestamp.html
+    - name: Run OWASP ZAP Baseline Scan
+      run: |
+        timestamp=$(date '+%Y-%m-%d-%H-%M-%S')
+        mkdir -p reports
+        zaproxy -cmd \
+          -quickurl http://${{ needs.terraform-deploy.outputs.vm_ip }} \
+          -quickout reports/owasp-scan-report-$timestamp.html
+        echo "REPORT_FILE=reports/owasp-scan-report-$timestamp.html" >> $GITHUB_ENV
 
-      - name: Azure Login
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Run OWASP scan
-        run: |
-         mkdir -p reports
-         owasp-scan --output reports/owasp-scan-report.html
-
-      - name: Upload OWASP report to Azure Blob
-        run: |
-         timestamp=$(date '+%Y-%m-%d-%H-%M-%S')
-         az storage blob upload \
+    - name: Upload OWASP report to Azure Blob
+      run: |
+        timestamp=$(date '+%Y-%m-%d-%H-%M-%S')
+        az storage blob upload \
           --account-name $SA \
           --container-name reports \
-          --file reports/owasp-scan-report.html \
+          --file $REPORT_FILE \
           --name owasp-scan-report-$timestamp.html \
           --auth-mode key \
           --account-key ${{ secrets.STORAGE_ACCOUNT_KEY }}
+
