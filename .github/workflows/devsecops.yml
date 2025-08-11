@@ -137,7 +137,7 @@ jobs:
           mkdir -p reports
           timestamp=$(date '+%Y-%m-%d-%H-%M-%S')
           report_file="owasp-scan-report-$timestamp.html"
-          target_url="http://${{ needs.deploy-web-app.outputs.vm_ip }}"
+          target_url="http://${{ needs.terraform-deploy.outputs.vm_ip }}"
           echo "Running ZAP scan against: $target_url"
           docker run --rm --user root \
             -v $(pwd)/reports:/zap/wrk/:rw \
