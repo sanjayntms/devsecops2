@@ -135,7 +135,9 @@ jobs:
     - name: Install OWASP ZAP CLI
       run: |
        sudo apt-get update
-       sudo apt-get install -y snapd libtiff6
+       sudo apt-get install -y snapd libtiff6 libtiff-dev
+       sudo ln -s /usr/lib/x86_64-linux-gnu/libtiff.so.6 /usr/lib/x86_64-linux-gnu/libtiff.so.5
+
        sudo snap install zaproxy --classic
 
 
@@ -157,6 +159,10 @@ jobs:
           echo "ERROR: Report not generated"
           exit 1
         fi
+    
+    - name: Debug IP Output
+      run: |
+            echo "VM IP is: ${{ needs.terraform-deploy.outputs.vm_ip }}"
 
     - name: Azure Login
       uses: azure/login@v1
