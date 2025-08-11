@@ -121,8 +121,7 @@ jobs:
           "
       - name: Restart NGINX
         run: |
-          sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} "sudo systemctl restart nginx"  owasp-scan:
-    
+          sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} "sudo systemctl restart nginx" 
   owasp-scan: 
     needs: deploy-web-app
     runs-on: ubuntu-latest
