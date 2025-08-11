@@ -119,7 +119,7 @@ jobs:
         run: |
           sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} "\
             sudo rm -rf /var/www/html/* && \
-            sudo cp -r /tmp/site/* /var/www/html/ && \
+            sudo cp -r /tmp/site/app/* /var/www/html/ && \
             sudo chown -R www-data:www-data /var/www/html && \
             sudo chmod -R 755 /var/www/html \
           "
