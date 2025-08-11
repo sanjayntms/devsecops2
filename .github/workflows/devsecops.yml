@@ -49,11 +49,8 @@ jobs:
 
       - name: Terraform Init with Remote Backend
         working-directory: ./infra
-        run: terraform init \
-          -backend-config="resource_group_name=ntmsla1_group" \
-          -backend-config="storage_account_name=$SA" \
-          -backend-config="container_name=tfstate" \
-          -backend-config="key=terraform.tfstate"
+        run: terraform init -backend-config="resource_group_name=ntmsla1_group" -backend-config="storage_account_name=ntmsla1group9185" -backend-config="container_name=tfstate" -backend-config="key=terraform.tfstate"
+
 
       - name: Terraform Apply
         working-directory: ./infra
