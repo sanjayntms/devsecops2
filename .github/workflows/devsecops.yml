@@ -140,11 +140,11 @@ jobs:
         timestamp=$(date '+%Y-%m-%d-%H-%M-%S')
         report_file="owasp-scan-report-$timestamp.html"
 
-        echo "Running ZAP scan against: http://${{ terraform output -raw public_ip }}"
+        echo "Running ZAP scan against: http://${{ needs.terraform-deploy.outputs.vm_ip }}"
 
         docker run --rm -v $(pwd)/reports:/zap/wrk/:rw ghcr.io/zaproxy/zaproxy:stable \
           zap-baseline.py \
-          -t http://${{ needs.deploy-web-app.outputs.vm_ip }} \
+          -t http://${{ needs.terraform-deploy.outputs.vm_ip }} \
           -r "$report_file" || true
 
         if [ -f "reports/$report_file" ]; then
