@@ -121,31 +121,31 @@ jobs:
         run: |
           sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} "sudo systemctl restart nginx"
 
-  owasp-scan:
-    needs: deploy-web-app
-    runs-on: ubuntu-latest
-    steps:
       - name: Run OWASP ZAP Baseline Scan in Docker
         run: |
           mkdir -p reports
+          chmod 777 reports  # Give write perms to zap user
           timestamp=$(date '+%Y-%m-%d-%H-%M-%S')
           report_file="owasp-scan-report-$timestamp.html"
           target_url="http://${{ needs.deploy-web-app.outputs.vm_ip }}"
 
           echo "Running ZAP scan against: $target_url"
 
-          docker run --rm -v $(pwd)/reports:/zap/wrk/:rw ghcr.io/zaproxy/zaproxy:stable \
-            zap-baseline.py \
-            -t "$target_url" \
-            -r "$report_file" || true
+          docker run --rm --user root \
+          -v $(pwd)/reports:/zap/wrk/:rw \
+          ghcr.io/zaproxy/zaproxy:stable \
+          zap-baseline.py \
+          -t "$target_url" \
+          -r "$report_file" || true
 
           if [ -f "reports/$report_file" ]; then
-            echo "Report generated: reports/$report_file"
-            echo "REPORT_FILE=reports/$report_file" >> $GITHUB_ENV
+          echo "Report generated: reports/$report_file"
+          echo "REPORT_FILE=reports/$report_file" >> $GITHUB_ENV
           else
-            echo "No report generated. Skipping upload."
-            echo "REPORT_FILE=" >> $GITHUB_ENV
+          echo "No report generated. Skipping upload."
+          echo "REPORT_FILE=" >> $GITHUB_ENV
           fi
+
 
       - name: Azure Login
         uses: azure/login@v1
