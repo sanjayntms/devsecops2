@@ -16,12 +16,6 @@ jobs:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
-      # Uncomment to enable Terraform security scan
-      # - name: Run Checkov (Terraform Security Scan)
-      #   uses: bridgecrewio/checkov-action@v12
-      #   with:
-      #     directory: ./infra
-
   terraform-deploy:
     needs: code-scan
     runs-on: ubuntu-latest
@@ -41,8 +35,7 @@ jobs:
 
       - name: Create Resource Group (Idempotent)
         run: |
-          az group show --name $RESOURCE_GROUP || \
-          az group create --name $RESOURCE_GROUP --location $LOCATION
+          az group show --name $RESOURCE_GROUP || az group create --name $RESOURCE_GROUP --location $LOCATION
 
       - name: Create Key Vault (Idempotent)
         run: |
@@ -54,11 +47,9 @@ jobs:
           az keyvault secret show --vault-name $KEYVAULT_NAME --name webvm-password || \
           az keyvault secret set --vault-name $KEYVAULT_NAME --name webvm-password --value ${{ secrets.VM_PASSWORD }}
 
-       
       - name: Terraform Init with Remote Backend
         working-directory: ./infra
         run: terraform init -backend-config="resource_group_name=ntmsla1_group" -backend-config="storage_account_name=ntmsla1group9185" -backend-config="container_name=tfstate" -backend-config="key=terraform.tfstate"
-
 
       - name: Terraform Apply
         working-directory: ./infra
@@ -69,10 +60,10 @@ jobs:
            ARM_TENANT_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).tenantId }}
         run: |
           terraform apply -auto-approve \
-            -var "resource_group_name=$RESOURCE_GROUP" \
-            -var "storage_account_name=$SA" \
-            -var "keyvault_name=$KEYVAULT_NAME" \
-            -var "location=$LOCATION"
+          -var "resource_group_name=$RESOURCE_GROUP" \
+          -var "storage_account_name=$STORAGE_ACCOUNT" \
+          -var "keyvault_name=$KEYVAULT_NAME" \
+          -var "location=$LOCATION"
 
       - name: Output Public IP
         id: output_ip
@@ -83,6 +74,8 @@ jobs:
   deploy-web-app:
     needs: terraform-deploy
     runs-on: ubuntu-latest
+    outputs:
+      vm_ip: ${{ needs.terraform-deploy.outputs.vm_ip }}
     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
@@ -102,20 +95,18 @@ jobs:
 
       - name: Install and Configure NGINX
         run: |
-          sshpass -p "${{ steps.kv.outputs.webvm-password }}" \
-          ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} <<'EOF'
-            sudo apt-get update -y
-            sudo apt-get install nginx -y
-            sudo systemctl enable nginx
-            sudo ufw allow 80
-            sudo ufw allow 22
-            sudo ufw --force enable
-          EOF
+         sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} <<'EOF'
+          sudo apt-get update -y
+          sudo apt-get install nginx -y
+          sudo systemctl enable nginx
+          sudo ufw allow 80
+          sudo ufw allow 22
+          sudo ufw --force enable
+         EOF
 
       - name: Create Target Folder on VM
         run: |
-          sshpass -p "${{ steps.kv.outputs.webvm-password }}" \
-          ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} "mkdir -p /tmp/site"
+          sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} "mkdir -p /tmp/site"
 
       - name: Upload Web Site
         uses: appleboy/scp-action@v0.1.4
@@ -128,28 +119,22 @@ jobs:
 
       - name: Restart NGINX
         run: |
-          sshpass -p "${{ steps.kv.outputs.webvm-password }}" \
-          ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} "sudo systemctl restart nginx"
+          sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} "sudo systemctl restart nginx"
 
   owasp-scan:
     needs: deploy-web-app
     runs-on: ubuntu-latest
     steps:
-      - name: Create Reports Directory
-        run: mkdir -p reports
-
       - name: Run OWASP ZAP Baseline Scan in Docker
         run: |
+          mkdir -p reports
           timestamp=$(date '+%Y-%m-%d-%H-%M-%S')
           report_file="owasp-scan-report-$timestamp.html"
-          
-          target_url="http://${{ needs.terraform-deploy.outputs.vm_ip }}"
+          target_url="http://${{ needs.deploy-web-app.outputs.vm_ip }}"
+
           echo "Running ZAP scan against: $target_url"
 
-          docker run --rm \
-            --user root \
-            -v "$(pwd)/reports:/zap/wrk" \
-            ghcr.io/zaproxy/zaproxy:stable \
+          docker run --rm -v $(pwd)/reports:/zap/wrk/:rw ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py \
             -t "$target_url" \
             -r "$report_file" || true
@@ -176,3 +161,6 @@ jobs:
             --file "$REPORT_FILE" \
             --name "$(basename "$REPORT_FILE")" \
             --auth-mode login
+        env:
+          SA: ntmsla1group9185
+          REPORT_FILE: ${{ env.REPORT_FILE }}
