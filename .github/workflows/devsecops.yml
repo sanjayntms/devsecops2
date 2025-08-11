@@ -49,27 +49,33 @@ jobs:
 
       - name: Terraform Init with Remote Backend
         working-directory: ./infra
-        run: terraform init -backend-config="resource_group_name=ntmsla1_group" -backend-config="storage_account_name=ntmsla1group9185" -backend-config="container_name=tfstate" -backend-config="key=terraform.tfstate"
+        run: terraform init \
+          -backend-config="resource_group_name=ntmsla1_group" \
+          -backend-config="storage_account_name=$SA" \
+          -backend-config="container_name=tfstate" \
+          -backend-config="key=terraform.tfstate"
 
       - name: Terraform Apply
         working-directory: ./infra
         env:
-           ARM_CLIENT_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).clientId }}
-           ARM_CLIENT_SECRET: ${{ fromJSON(secrets.AZURE_CREDENTIALS).clientSecret }}
-           ARM_SUBSCRIPTION_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).subscriptionId }}
-           ARM_TENANT_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).tenantId }}
+          ARM_CLIENT_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).clientId }}
+          ARM_CLIENT_SECRET: ${{ fromJSON(secrets.AZURE_CREDENTIALS).clientSecret }}
+          ARM_SUBSCRIPTION_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).subscriptionId }}
+          ARM_TENANT_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).tenantId }}
         run: |
           terraform apply -auto-approve \
-          -var "resource_group_name=$RESOURCE_GROUP" \
-          -var "storage_account_name=$STORAGE_ACCOUNT" \
-          -var "keyvault_name=$KEYVAULT_NAME" \
-          -var "location=$LOCATION"
+            -var "resource_group_name=$RESOURCE_GROUP" \
+            -var "storage_account_name=$SA" \
+            -var "keyvault_name=$KEYVAULT_NAME" \
+            -var "location=$LOCATION"
 
       - name: Output Public IP
         id: output_ip
         working-directory: ./infra
         run: |
-          echo "vm_ip=$(terraform output -raw public_ip)" >> $GITHUB_OUTPUT
+          vm_ip=$(terraform output -raw public_ip)
+          echo "VM IP is: $vm_ip"
+          echo "vm_ip=$vm_ip" >> $GITHUB_OUTPUT
 
   deploy-web-app:
     needs: terraform-deploy
@@ -95,14 +101,14 @@ jobs:
 
       - name: Install and Configure NGINX
         run: |
-         sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} <<'EOF'
-          sudo apt-get update -y
-          sudo apt-get install nginx -y
-          sudo systemctl enable nginx
-          sudo ufw allow 80
-          sudo ufw allow 22
-          sudo ufw --force enable
-         EOF
+          sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} <<'EOF'
+            sudo apt-get update -y
+            sudo apt-get install nginx -y
+            sudo systemctl enable nginx
+            sudo ufw allow 80
+            sudo ufw allow 22
+            sudo ufw --force enable
+          EOF
 
       - name: Create Target Folder on VM
         run: |
@@ -121,10 +127,13 @@ jobs:
         run: |
           sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} "sudo systemctl restart nginx"
 
+  owasp-scan:
+    needs: deploy-web-app
+    runs-on: ubuntu-latest
+    steps:
       - name: Run OWASP ZAP Baseline Scan in Docker
         run: |
           mkdir -p reports
-          chmod 777 reports  # Give write perms to zap user
           timestamp=$(date '+%Y-%m-%d-%H-%M-%S')
           report_file="owasp-scan-report-$timestamp.html"
           target_url="http://${{ needs.deploy-web-app.outputs.vm_ip }}"
@@ -132,20 +141,19 @@ jobs:
           echo "Running ZAP scan against: $target_url"
 
           docker run --rm --user root \
-          -v $(pwd)/reports:/zap/wrk/:rw \
-          ghcr.io/zaproxy/zaproxy:stable \
-          zap-baseline.py \
-          -t "$target_url" \
-          -r "$report_file" || true
+            -v $(pwd)/reports:/zap/wrk/:rw \
+            ghcr.io/zaproxy/zaproxy:stable \
+            zap-baseline.py \
+            -t "$target_url" \
+            -r "$report_file" || true
 
           if [ -f "reports/$report_file" ]; then
-          echo "Report generated: reports/$report_file"
-          echo "REPORT_FILE=reports/$report_file" >> $GITHUB_ENV
+            echo "Report generated: reports/$report_file"
+            echo "REPORT_FILE=reports/$report_file" >> $GITHUB_ENV
           else
-          echo "No report generated. Skipping upload."
-          echo "REPORT_FILE=" >> $GITHUB_ENV
+            echo "No report generated. Skipping upload."
+            echo "REPORT_FILE=" >> $GITHUB_ENV
           fi
-
 
       - name: Azure Login
         uses: azure/login@v1
