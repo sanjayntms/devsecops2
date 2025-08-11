@@ -51,7 +51,6 @@ jobs:
         working-directory: ./infra
         run: terraform init -backend-config="resource_group_name=ntmsla1_group" -backend-config="storage_account_name=ntmsla1group9185" -backend-config="container_name=tfstate" -backend-config="key=terraform.tfstate"
 
-
       - name: Terraform Apply
         working-directory: ./infra
         env:
@@ -73,57 +72,62 @@ jobs:
           echo "vm_ip=$(terraform output -raw public_ip)" >> $GITHUB_OUTPUT
 
   deploy-web-app:
-   needs: terraform-deploy
-   runs-on: ubuntu-latest
-   steps:
-    - name: Checkout Repo
-      uses: actions/checkout@v4
+    needs: terraform-deploy
+    runs-on: ubuntu-latest
+    steps:
+      - name: Checkout Repo
+        uses: actions/checkout@v4
 
-    - name: Azure Login
-      uses: azure/login@v1
-      with:
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    - name: Get VM Password from Key Vault
-      id: kv
-      uses: azure/get-keyvault-secrets@v1
-      with:
-        keyvault: ${{ env.KEYVAULT_NAME }}
-        secrets: webvm-password
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
+      - name: Get VM Password from Key Vault
+        id: kv
+        uses: azure/get-keyvault-secrets@v1
+        with:
+          keyvault: ${{ env.KEYVAULT_NAME }}
+          secrets: webvm-password
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    - name: Install and Configure NGINX
-      run: |
-        sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} <<'EOF'
+      - name: Install and Configure NGINX
+        run: |
+         sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} <<'EOF'
           sudo apt-get update -y
           sudo apt-get install nginx -y
           sudo systemctl enable nginx
           sudo ufw allow 80
           sudo ufw allow 22
           sudo ufw --force enable
-        EOF
+         EOF
 
-    - name: Upload Web Site to Temporary Folder
-      uses: appleboy/scp-action@v0.1.4
-      with:
-        host: ${{ needs.terraform-deploy.outputs.vm_ip }}
-        username: vmadmin
-        password: ${{ steps.kv.outputs.webvm-password }}
-        source: "./app/*"
-        target: "/tmp/site"
+      - name: Create Target Folder on VM
+        run: |
+          sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} "mkdir -p /tmp/site"
 
-    - name: Move Web Site into NGINX root
-      run: |
-        sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} <<'EOF'
-          sudo rm -rf /var/www/html/*
-          sudo cp -r /tmp/site/* /var/www/html/
-          sudo chown -R www-data:www-data /var/www/html
-          sudo chmod -R 755 /var/www/html
-        EOF
+      - name: Upload Website Files (flattened)
+        uses: appleboy/scp-action@v0.1.4
+        with:
+          host: ${{ needs.terraform-deploy.outputs.vm_ip }}
+          username: vmadmin
+          password: ${{ steps.kv.outputs.webvm-password }}
+          source: "./app/*"
+          target: "/tmp/site"
 
-    - name: Restart NGINX
-      run: |
-        sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} "sudo systemctl restart nginx"
+      - name: Deploy Files to NGINX Root
+        run: |
+          sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} "\
+            sudo rm -rf /var/www/html/* && \
+            sudo cp -r /tmp/site/* /var/www/html/ && \
+            sudo chown -R www-data:www-data /var/www/html && \
+            sudo chmod -R 755 /var/www/html \
+          "
+
+      - name: Restart NGINX
+        run: |
+          sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} "sudo systemctl restart nginx"
+
   owasp-scan:
     needs: deploy-web-app
     runs-on: ubuntu-latest
@@ -133,12 +137,14 @@ jobs:
           mkdir -p reports
           timestamp=$(date '+%Y-%m-%d-%H-%M-%S')
           report_file="owasp-scan-report-$timestamp.html"
-          target_url="http://${{ needs.deploy-web-app.outputs.vm_ip }}"
-          echo "Running ZAP scan against: $target_url"
+
+          echo "Running ZAP scan against: http://${{ needs.terraform-deploy.outputs.vm_ip }}"
+
           docker run --rm -v $(pwd)/reports:/zap/wrk/:rw ghcr.io/zaproxy/zaproxy:stable \
             zap-baseline.py \
-            -t "$target_url" \
+            -t http://${{ needs.terraform-deploy.outputs.vm_ip }} \
             -r "$report_file" || true
+
           if [ -f "reports/$report_file" ]; then
             echo "Report generated: reports/$report_file"
             echo "REPORT_FILE=reports/$report_file" >> $GITHUB_ENV
