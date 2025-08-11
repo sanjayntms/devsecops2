@@ -134,8 +134,10 @@ jobs:
    steps:
     - name: Install OWASP ZAP CLI
       run: |
-        sudo apt-get update && sudo apt-get install -y snapd libtiff5
-        sudo snap install zaproxy --classic
+       sudo apt-get update
+       sudo apt-get install -y snapd libtiff6
+       sudo snap install zaproxy --classic
+
 
     - name: Run OWASP ZAP Baseline Scan
       run: |
