@@ -75,11 +75,11 @@ jobs:
           echo "vm_ip=$vm_ip" >> $GITHUB_OUTPUT
 
   deploy-web-app:
-    needs: terraform-deploy
-    runs-on: ubuntu-latest
-    outputs:
+     needs: terraform-deploy
+     runs-on: ubuntu-latest
+     outputs:
       vm_ip: ${{ needs.terraform-deploy.outputs.vm_ip }}
-    steps:
+     steps:
       - name: Checkout Repo
         uses: actions/checkout@v4
 
@@ -107,10 +107,6 @@ jobs:
             sudo ufw --force enable
           EOF
 
-      - name: Create Target Folder on VM
-        run: |
-          sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} "mkdir -p /tmp/site"
-
       - name: Upload Web Site
         uses: appleboy/scp-action@v0.1.4
         with:
@@ -119,6 +115,14 @@ jobs:
           password: ${{ steps.kv.outputs.webvm-password }}
           source: "./app/*"
           target: "/tmp/site"
+
+      - name: Deploy Site to NGINX Web Root
+        run: |
+          sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} <<'EOF'
+            sudo rm -rf /var/www/html/*
+            sudo cp -r /tmp/site/* /var/www/html/
+            sudo chown -R www-data:www-data /var/www/html
+          EOF
 
       - name: Restart NGINX
         run: |
