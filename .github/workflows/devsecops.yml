@@ -77,60 +77,92 @@ jobs:
           echo "vm_ip=$vm_ip" >> $GITHUB_OUTPUT
 
   deploy-web-app:
-    needs: terraform-deploy
-    runs-on: ubuntu-latest
-    steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v4
+   needs: terraform-deploy
+   runs-on: ubuntu-latest
+   steps:
+    - name: Checkout Repo
+      uses: actions/checkout@v4
 
-      - name: Azure Login
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Get VM Password from Key Vault
-        id: kv
-        uses: azure/get-keyvault-secrets@v1
-        with:
-          keyvault: ${{ env.KEYVAULT_NAME }}
-          secrets: webvm-password
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+    - name: Get VM Password from Key Vault
+      id: kv
+      uses: azure/get-keyvault-secrets@v1
+      with:
+        keyvault: ${{ env.KEYVAULT_NAME }}
+        secrets: webvm-password
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Install and Configure NGINX Reverse Proxy for Juice Shop
-        run: |
-          sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} <<'EOF'
-            sudo apt-get update -y
-            sudo apt-get install -y nginx curl unzip nodejs npm
-            sudo systemctl enable nginx
-            sudo ufw allow 80
-            sudo ufw allow 22
-            sudo ufw --force enable
+    - name: Install and Configure Juice Shop with NGINX
+      run: |
+        sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} <<'EOF'
+          set -e
+          
+          # Update system and install deps
+          sudo apt-get update -y
+          sudo apt-get install -y nginx curl unzip nodejs npm
 
-            # Install Juice Shop
-            sudo npm install -g juice-shop --unsafe-perm
+          # Remove old /var/www/html contents
+          sudo rm -rf /var/www/html/*
 
-            # Configure NGINX as reverse proxy to Juice Shop on port 3000
-            sudo bash -c 'cat >/etc/nginx/sites-available/default' <<'NGINXCONF'
-            server {
-             listen 80;
-             server_name _;
+          # Firewall config
+          sudo systemctl enable nginx
+          sudo ufw allow 80
+          sudo ufw allow 22
+          sudo ufw --force enable
 
-            location / {
-             proxy_pass http://localhost:3000;
-             proxy_http_version 1.1;
-             proxy_set_header Upgrade $http_upgrade;
-             proxy_set_header Connection 'upgrade';
-             proxy_set_header Host $host;
-             proxy_cache_bypass $http_upgrade;
-           }
+          # Install Juice Shop from GitHub release
+          sudo rm -rf /opt/juice-shop
+          sudo mkdir -p /opt/juice-shop
+          cd /opt/juice-shop
+          curl -L https://github.com/juice-shop/juice-shop/releases/latest/download/juice-shop-archive.zip -o juice-shop.zip
+          unzip juice-shop.zip
+          rm juice-shop.zip
+          npm install --production
+
+          # Create systemd service for Juice Shop
+          sudo bash -c 'cat >/etc/systemd/system/juice-shop.service' <<'SERVICE'
+          [Unit]
+          Description=OWASP Juice Shop
+          After=network.target
+
+          [Service]
+          WorkingDirectory=/opt/juice-shop
+          ExecStart=/usr/bin/npm start
+          Restart=always
+          User=www-data
+          Environment=NODE_ENV=production
+
+          [Install]
+          WantedBy=multi-user.target
+          SERVICE
+
+          sudo systemctl daemon-reload
+          sudo systemctl enable juice-shop
+          sudo systemctl start juice-shop
+
+          # Configure NGINX reverse proxy to Juice Shop
+          sudo bash -c 'cat >/etc/nginx/sites-available/default' <<'NGINXCONF'
+          server {
+              listen 80;
+              server_name _;
+
+              location / {
+                  proxy_pass http://localhost:3000;
+                  proxy_http_version 1.1;
+                  proxy_set_header Upgrade $http_upgrade;
+                  proxy_set_header Connection 'upgrade';
+                  proxy_set_header Host $host;
+                  proxy_cache_bypass $http_upgrade;
+              }
           }
           NGINXCONF
 
-            sudo systemctl restart nginx
-
-            # Start Juice Shop in background
-            nohup juice-shop &>/dev/null &
-          EOF
+          sudo systemctl restart nginx
+        EOF
 
   owasp-scan:
     needs: deploy-web-app
