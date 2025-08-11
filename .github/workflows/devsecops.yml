@@ -36,41 +36,39 @@ jobs:
       - name: Create Resource Group (Idempotent)
         run: |
           az group show --name $RESOURCE_GROUP || az group create --name $RESOURCE_GROUP --location $LOCATION
-
       - name: Create Key Vault (Idempotent)
         run: |
           az keyvault show --name $KEYVAULT_NAME --resource-group $RESOURCE_GROUP || \
           az keyvault create --name $KEYVAULT_NAME --resource-group $RESOURCE_GROUP --location $LOCATION
-
       - name: Set Key Vault Secret (Idempotent)
         run: |
           az keyvault secret show --vault-name $KEYVAULT_NAME --name webvm-password || \
           az keyvault secret set --vault-name $KEYVAULT_NAME --name webvm-password --value ${{ secrets.VM_PASSWORD }}
-
       - name: Terraform Init with Remote Backend
         working-directory: ./infra
         run: terraform init -backend-config="resource_group_name=ntmsla1_group" -backend-config="storage_account_name=ntmsla1group9185" -backend-config="container_name=tfstate" -backend-config="key=terraform.tfstate"
 
+
       - name: Terraform Apply
         working-directory: ./infra
         env:
-           ARM_CLIENT_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).clientId }}
-           ARM_CLIENT_SECRET: ${{ fromJSON(secrets.AZURE_CREDENTIALS).clientSecret }}
-           ARM_SUBSCRIPTION_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).subscriptionId }}
-           ARM_TENANT_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).tenantId }}
+          ARM_CLIENT_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).clientId }}
+          ARM_CLIENT_SECRET: ${{ fromJSON(secrets.AZURE_CREDENTIALS).clientSecret }}
+          ARM_SUBSCRIPTION_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).subscriptionId }}
+          ARM_TENANT_ID: ${{ fromJSON(secrets.AZURE_CREDENTIALS).tenantId }}
         run: |
           terraform apply -auto-approve \
-          -var "resource_group_name=$RESOURCE_GROUP" \
-          -var "storage_account_name=$STORAGE_ACCOUNT" \
-          -var "keyvault_name=$KEYVAULT_NAME" \
-          -var "location=$LOCATION"
-
+            -var "resource_group_name=$RESOURCE_GROUP" \
+            -var "storage_account_name=$SA" \
+            -var "keyvault_name=$KEYVAULT_NAME" \
+            -var "location=$LOCATION"
       - name: Output Public IP
         id: output_ip
         working-directory: ./infra
         run: |
-          echo "vm_ip=$(terraform output -raw public_ip)" >> $GITHUB_OUTPUT
-
+          vm_ip=$(terraform output -raw public_ip)
+          echo "VM IP is: $vm_ip"
+          echo "vm_ip=$vm_ip" >> $GITHUB_OUTPUT
   deploy-web-app:
     needs: terraform-deploy
     runs-on: ubuntu-latest
@@ -101,11 +99,9 @@ jobs:
           sudo ufw allow 22
           sudo ufw --force enable
          EOF
-
       - name: Create Target Folder on VM
         run: |
           sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} "mkdir -p /tmp/site"
-
       - name: Upload Website Files (flattened)
         uses: appleboy/scp-action@v0.1.4
         with:
@@ -123,12 +119,11 @@ jobs:
             sudo chown -R www-data:www-data /var/www/html && \
             sudo chmod -R 755 /var/www/html \
           "
-
       - name: Restart NGINX
         run: |
-          sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} "sudo systemctl restart nginx"
-
-  owasp-scan:
+          sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} "sudo systemctl restart nginx"  owasp-scan:
+    
+  owasp-scan: 
     needs: deploy-web-app
     runs-on: ubuntu-latest
     steps:
@@ -137,7 +132,7 @@ jobs:
           mkdir -p reports
           timestamp=$(date '+%Y-%m-%d-%H-%M-%S')
           report_file="owasp-scan-report-$timestamp.html"
-          target_url="http://${{ needs.terraform-deploy.outputs.vm_ip }}"
+          target_url="http://${{ needs.deploy-web-app.outputs.vm_ip }}"
           echo "Running ZAP scan against: $target_url"
           docker run --rm --user root \
             -v $(pwd)/reports:/zap/wrk/:rw \
