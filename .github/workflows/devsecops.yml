@@ -145,9 +145,9 @@ jobs:
         timestamp=$(date '+%Y-%m-%d-%H-%M-%S')
         tmp_report="/tmp/owasp-scan-report-$timestamp.html"
         final_report="reports/owasp-scan-report-$timestamp.html"
-        echo "Running ZAP scan against: http://${{ needs.deploy-web-app.outputs.vm_ip }}"
+        echo "Running ZAP scan against: http://${{ needs.terraform-deploy.outputs.vm_ip }}"
         zaproxy -cmd \
-                -quickurl http://${{ needs.deploy-web-app.outputs.vm_ip }} \
+                -quickurl http://${{ needs.terraform-deploy.outputs.vm_ip }} \
                 -quickout "$tmp_report" \
                 -quickprogress || true
         if [ -f "$tmp_report" ]; then
