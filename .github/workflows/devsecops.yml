@@ -73,64 +73,57 @@ jobs:
           echo "vm_ip=$(terraform output -raw public_ip)" >> $GITHUB_OUTPUT
 
   deploy-web-app:
-    needs: terraform-deploy
-    runs-on: ubuntu-latest
-    outputs:
-      vm_ip: ${{ needs.terraform-deploy.outputs.vm_ip }}
-    steps:
-      - name: Checkout Repo
-        uses: actions/checkout@v4
+   needs: terraform-deploy
+   runs-on: ubuntu-latest
+   steps:
+    - name: Checkout Repo
+      uses: actions/checkout@v4
 
-      - name: Azure Login
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Get VM Password from Key Vault
-        id: kv
-        uses: azure/get-keyvault-secrets@v1
-        with:
-          keyvault: ${{ env.KEYVAULT_NAME }}
-          secrets: webvm-password
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+    - name: Get VM Password from Key Vault
+      id: kv
+      uses: azure/get-keyvault-secrets@v1
+      with:
+        keyvault: ${{ env.KEYVAULT_NAME }}
+        secrets: webvm-password
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Install and Configure NGINX (Idempotent)
-        run: |
-          sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} <<'EOF'
-            sudo apt-get update -y
-            sudo apt-get install -y nginx
-            sudo systemctl enable nginx
-            sudo ufw allow 80
-            sudo ufw allow 22
-            sudo ufw --force enable
-          EOF
+    - name: Install and Configure NGINX
+      run: |
+        sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} <<'EOF'
+          sudo apt-get update -y
+          sudo apt-get install nginx -y
+          sudo systemctl enable nginx
+          sudo ufw allow 80
+          sudo ufw allow 22
+          sudo ufw --force enable
+        EOF
 
-      - name: Create Target Folder on VM (Idempotent)
-        run: |
-          sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} "mkdir -p /tmp/site"
+    - name: Upload Web Site to Temporary Folder
+      uses: appleboy/scp-action@v0.1.4
+      with:
+        host: ${{ needs.terraform-deploy.outputs.vm_ip }}
+        username: vmadmin
+        password: ${{ steps.kv.outputs.webvm-password }}
+        source: "./app/*"
+        target: "/tmp/site"
 
-      - name: Upload Web Site
-        uses: appleboy/scp-action@v0.1.4
-        with:
-          host: ${{ needs.terraform-deploy.outputs.vm_ip }}
-          username: vmadmin
-          password: ${{ steps.kv.outputs.webvm-password }}
-          source: "./app/*"
-          target: "/tmp/site"
+    - name: Move Web Site into NGINX root
+      run: |
+        sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} <<'EOF'
+          sudo rm -rf /var/www/html/*
+          sudo cp -r /tmp/site/* /var/www/html/
+          sudo chown -R www-data:www-data /var/www/html
+          sudo chmod -R 755 /var/www/html
+        EOF
 
-      - name: Deploy Site to NGINX Web Root with Correct Permissions
-        run: |
-          sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} <<'EOF'
-            sudo rm -rf /var/www/html/*
-            sudo cp -r /tmp/site/* /var/www/html/
-            sudo chown -R www-data:www-data /var/www/html
-            sudo chmod -R 755 /var/www/html
-          EOF
-
-      - name: Restart NGINX
-        run: |
-          sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} "sudo systemctl restart nginx"
-
+    - name: Restart NGINX
+      run: |
+        sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} "sudo systemctl restart nginx"
   owasp-scan:
     needs: deploy-web-app
     runs-on: ubuntu-latest
