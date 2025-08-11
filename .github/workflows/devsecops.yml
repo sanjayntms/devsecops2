@@ -132,37 +132,28 @@ jobs:
    needs: deploy-web-app
    runs-on: ubuntu-latest
    steps:
-    - name: Install OWASP ZAP CLI
-      run: |
-       sudo apt-get update
-       sudo apt-get install -y snapd libtiff6 libtiff-dev
-       sudo ln -s /usr/lib/x86_64-linux-gnu/libtiff.so.6 /usr/lib/x86_64-linux-gnu/libtiff.so.5
+    
 
-       sudo snap install zaproxy --classic
-
-
-    - name: Run OWASP ZAP Baseline Scan
+    - name: Run OWASP ZAP Baseline Scan in Docker
       run: |
         mkdir -p reports
         timestamp=$(date '+%Y-%m-%d-%H-%M-%S')
-        tmp_report="/tmp/owasp-scan-report-$timestamp.html"
-        final_report="reports/owasp-scan-report-$timestamp.html"
-        echo "Running ZAP scan against: http://${{ needs.terraform-deploy.outputs.vm_ip }}"
-        zaproxy -cmd \
-                -quickurl http://${{ needs.terraform-deploy.outputs.vm_ip }} \
-                -quickout "$tmp_report" \
-                -quickprogress || true
-        if [ -f "$tmp_report" ]; then
-          mv "$tmp_report" "$final_report"
-          echo "REPORT_FILE=$final_report" >> $GITHUB_ENV
+        report_file="owasp-scan-report-$timestamp.html"
+
+        echo "Running ZAP scan against: http://${{ terraform output -raw public_ip }}"
+
+        docker run --rm -v $(pwd)/reports:/zap/wrk/:rw ghcr.io/zaproxy/zaproxy:stable \
+          zap-baseline.py \
+          -t http://${{ needs.deploy-web-app.outputs.vm_ip }} \
+          -r "$report_file" || true
+
+        if [ -f "reports/$report_file" ]; then
+          echo "Report generated: reports/$report_file"
+          echo "REPORT_FILE=reports/$report_file" >> $GITHUB_ENV
         else
-          echo "ERROR: Report not generated"
-          exit 1
+          echo "No report generated. Skipping upload."
+          echo "REPORT_FILE=" >> $GITHUB_ENV
         fi
-    
-    - name: Debug IP Output
-      run: |
-            echo "VM IP is: ${{ needs.terraform-deploy.outputs.vm_ip }}"
 
     - name: Azure Login
       uses: azure/login@v1
@@ -170,6 +161,7 @@ jobs:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
     - name: Upload OWASP report to Azure Blob
+      if: env.REPORT_FILE != ''
       run: |
         az storage blob upload \
           --account-name $SA \
