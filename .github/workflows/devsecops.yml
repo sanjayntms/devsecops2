@@ -35,19 +35,26 @@ jobs:
 
       - name: Create Resource Group (Idempotent)
         run: |
-          az group show --name $RESOURCE_GROUP || az group create --name $RESOURCE_GROUP --location $LOCATION
+          az group show --name $RESOURCE_GROUP || \
+          az group create --name $RESOURCE_GROUP --location $LOCATION
+
       - name: Create Key Vault (Idempotent)
         run: |
           az keyvault show --name $KEYVAULT_NAME --resource-group $RESOURCE_GROUP || \
           az keyvault create --name $KEYVAULT_NAME --resource-group $RESOURCE_GROUP --location $LOCATION
+
       - name: Set Key Vault Secret (Idempotent)
         run: |
           az keyvault secret show --vault-name $KEYVAULT_NAME --name webvm-password || \
           az keyvault secret set --vault-name $KEYVAULT_NAME --name webvm-password --value ${{ secrets.VM_PASSWORD }}
+
       - name: Terraform Init with Remote Backend
         working-directory: ./infra
-        run: terraform init -backend-config="resource_group_name=ntmsla1_group" -backend-config="storage_account_name=ntmsla1group9185" -backend-config="container_name=tfstate" -backend-config="key=terraform.tfstate"
-
+        run: terraform init \
+          -backend-config="resource_group_name=ntmsla1_group" \
+          -backend-config="storage_account_name=ntmsla1group9185" \
+          -backend-config="container_name=tfstate" \
+          -backend-config="key=terraform.tfstate"
 
       - name: Terraform Apply
         working-directory: ./infra
@@ -62,6 +69,7 @@ jobs:
             -var "storage_account_name=$SA" \
             -var "keyvault_name=$KEYVAULT_NAME" \
             -var "location=$LOCATION"
+
       - name: Output Public IP
         id: output_ip
         working-directory: ./infra
@@ -69,6 +77,7 @@ jobs:
           vm_ip=$(terraform output -raw public_ip)
           echo "VM IP is: $vm_ip"
           echo "vm_ip=$vm_ip" >> $GITHUB_OUTPUT
+
   deploy-web-app:
     needs: terraform-deploy
     runs-on: ubuntu-latest
@@ -89,40 +98,43 @@ jobs:
           secrets: webvm-password
           creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Install and Configure NGINX
+      - name: Install and Configure NGINX Reverse Proxy for Juice Shop
         run: |
-         sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} <<'EOF'
-          sudo apt-get update -y
-          sudo apt-get install nginx -y
-          sudo systemctl enable nginx
-          sudo ufw allow 80
-          sudo ufw allow 22
-          sudo ufw --force enable
-         EOF
-      - name: Create Target Folder on VM
-        run: |
-          sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} "mkdir -p /tmp/site"
-      - name: Upload Website Files (flattened)
-        uses: appleboy/scp-action@v0.1.4
-        with:
-          host: ${{ needs.terraform-deploy.outputs.vm_ip }}
-          username: vmadmin
-          password: ${{ steps.kv.outputs.webvm-password }}
-          source: "./app/*"
-          target: "/tmp/site"
+          sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} <<'EOF'
+            sudo apt-get update -y
+            sudo apt-get install -y nginx curl unzip nodejs npm
+            sudo systemctl enable nginx
+            sudo ufw allow 80
+            sudo ufw allow 22
+            sudo ufw --force enable
 
-      - name: Deploy Files to NGINX Root
-        run: |
-          sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} "\
-            sudo rm -rf /var/www/html/* && \
-            sudo cp -r /tmp/site/app/* /var/www/html/ && \
-            sudo chown -R www-data:www-data /var/www/html && \
-            sudo chmod -R 755 /var/www/html \
-          "
-      - name: Restart NGINX
-        run: |
-          sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} "sudo systemctl restart nginx" 
-  owasp-scan: 
+            # Install Juice Shop
+            sudo npm install -g juice-shop --unsafe-perm
+
+            # Configure NGINX as reverse proxy to Juice Shop on port 3000
+            sudo bash -c 'cat >/etc/nginx/sites-available/default' <<'NGINXCONF'
+server {
+    listen 80;
+    server_name _;
+
+    location / {
+        proxy_pass http://localhost:3000;
+        proxy_http_version 1.1;
+        proxy_set_header Upgrade $http_upgrade;
+        proxy_set_header Connection 'upgrade';
+        proxy_set_header Host $host;
+        proxy_cache_bypass $http_upgrade;
+    }
+}
+NGINXCONF
+
+            sudo systemctl restart nginx
+
+            # Start Juice Shop in background
+            nohup juice-shop &>/dev/null &
+          EOF
+
+  owasp-scan:
     needs: deploy-web-app
     runs-on: ubuntu-latest
     steps:
@@ -134,12 +146,12 @@ jobs:
       - name: Get VM Public IP from Azure
         id: get_ip
         run: |
-         ip=$(az vm list-ip-addresses \
-         --resource-group $RESOURCE_GROUP \
-         --name webvm \
-         --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" \
-         -o tsv)
-         echo "vm_ip=$ip" >> $GITHUB_OUTPUT
+          ip=$(az vm list-ip-addresses \
+            --resource-group $RESOURCE_GROUP \
+            --name webvm \
+            --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" \
+            -o tsv)
+          echo "vm_ip=$ip" >> $GITHUB_OUTPUT
 
       - name: Run OWASP ZAP Baseline Scan in Docker
         run: |
@@ -161,10 +173,6 @@ jobs:
             echo "No report generated. Skipping upload."
             echo "REPORT_FILE=" >> $GITHUB_ENV
           fi
-      - name: Azure Login
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
 
       - name: Upload OWASP report to Azure Blob
         if: env.REPORT_FILE != ''
