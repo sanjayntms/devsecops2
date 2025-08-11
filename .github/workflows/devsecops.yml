@@ -126,12 +126,27 @@ jobs:
     needs: deploy-web-app
     runs-on: ubuntu-latest
     steps:
+      - name: Azure Login
+        uses: azure/login@v1
+        with:
+          creds: ${{ secrets.AZURE_CREDENTIALS }}
+
+      - name: Get VM Public IP from Azure
+        id: get_ip
+        run: |
+         ip=$(az vm list-ip-addresses \
+         --resource-group $RESOURCE_GROUP \
+         --name webvm \
+         --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" \
+         -o tsv)
+         echo "vm_ip=$ip" >> $GITHUB_OUTPUT
+
       - name: Run OWASP ZAP Baseline Scan in Docker
         run: |
           mkdir -p reports
           timestamp=$(date '+%Y-%m-%d-%H-%M-%S')
           report_file="owasp-scan-report-$timestamp.html"
-          target_url="http://${{ needs.deploy-web-app.outputs.vm_ip }}"
+          target_url="http://${{ steps.get_ip.outputs.vm_ip }}"
           echo "Running ZAP scan against: $target_url"
           docker run --rm --user root \
             -v $(pwd)/reports:/zap/wrk/:rw \
