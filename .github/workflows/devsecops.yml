@@ -89,35 +89,31 @@ jobs:
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    - name: Get VM Public IP from Azure
-      id: get_ip
+    - name: Get VM Public IP
+      id: get-ip
       run: |
-          ip=$(az vm list-ip-addresses \
-            --resource-group $RESOURCE_GROUP \
-            --name webvm \
-            --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" \
-            -o tsv)
-          echo "vm_ip=$ip" >> $GITHUB_OUTPUT
+        ip=$(az vm list-ip-addresses \
+        --resource-group $RESOURCE_GROUP \
+        --name webvm \
+        --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" \
+        -o tsv)
+        echo "vm_ip=$ip" >> $GITHUB_OUTPUT
+ 
 
     - name: Install Docker and Run Juice Shop
       run: |
-        ssh -o StrictHostKeyChecking=no ${{ secrets.AZURE_VM_USER }}@${{ env.VM_IP }} <<'EOF'
-          # Install Docker if not already installed
-          sudo apt-get update -y
-          sudo apt-get install -y docker.io
-          sudo systemctl enable docker
-          sudo systemctl start docker
+       ssh -o StrictHostKeyChecking=no vmadmin@${{ steps.get-ip.outputs.vm_ip }} <<'EOF'
+       sudo apt-get update -y
+       sudo apt-get install -y docker.io
+       sudo systemctl enable docker
+       sudo systemctl start docker
 
-          # Remove existing Juice Shop containers if running
-          sudo docker ps -q --filter "ancestor=bkimminich/juice-shop" | grep -q . && \
-            sudo docker stop $(sudo docker ps -q --filter "ancestor=bkimminich/juice-shop")
+       sudo docker ps -q --filter "ancestor=bkimminich/juice-shop" | grep -q . && \
+        sudo docker stop $(sudo docker ps -q --filter "ancestor=bkimminich/juice-shop")
 
-          # Run Juice Shop
-          sudo docker run --rm -d -p 80:3000 bkimminich/juice-shop
-        EOF
+       sudo docker run --rm -d -p 80:3000 bkimminich/juice-shop
+       EOF
 
-    - name: Print Access Info
-      run: echo "Juice Shop is now available at http://${{ env.VM_IP }}"
 
 
   owasp-scan:
