@@ -131,55 +131,56 @@ jobs:
 
 
 
-  owasp-scan:
-    needs: deploy-web-app
-    runs-on: ubuntu-latest
-    steps:
-      - name: Azure Login
-        uses: azure/login@v1
-        with:
-          creds: ${{ secrets.AZURE_CREDENTIALS }}
+  owasp-scan: 
+   needs: deploy-web-app
+   runs-on: ubuntu-latest
+   steps:
+    - name: Azure Login
+      uses: azure/login@v1
+      with:
+        creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-      - name: Get VM Public IP from Azure
-        id: get_ip
-        run: |
-          ip=$(az vm list-ip-addresses \
-            --resource-group $RESOURCE_GROUP \
-            --name webvm \
-            --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" \
-            -o tsv)
-          echo "vm_ip=$ip" >> $GITHUB_OUTPUT
+    - name: Get VM Public IP from Azure
+      id: get_ip
+      run: |
+        ip=$(az vm list-ip-addresses \
+          --resource-group $RESOURCE_GROUP \
+          --name webvm \
+          --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" \
+          -o tsv)
+        echo "vm_ip=$ip" >> $GITHUB_OUTPUT
 
-      - name: Run OWASP ZAP Baseline Scan in Docker
-        run: |
-          mkdir -p reports
-          timestamp=$(date '+%Y-%m-%d-%H-%M-%S')
-          report_file="owasp-scan-report-$timestamp.html"
-          target_url="http://${{ steps.get_ip.outputs.vm_ip }}"
-          echo "Running ZAP scan against: $target_url"
-          docker run --rm --user root \
-            -v $(pwd)/reports:/zap/wrk/:rw \
-            ghcr.io/zaproxy/zaproxy:stable \
-            zap-baseline.py \
-            -t "$target_url" \
-            -r "$report_file" || true
-          if [ -f "reports/$report_file" ]; then
-            echo "Report generated: reports/$report_file"
-            echo "REPORT_FILE=reports/$report_file" >> $GITHUB_ENV
-          else
-            echo "No report generated. Skipping upload."
-            echo "REPORT_FILE=" >> $GITHUB_ENV
-          fi
+    - name: Run OWASP ZAP Full Scan in Docker
+      run: |
+        mkdir -p reports
+        timestamp=$(date '+%Y-%m-%d-%H-%M-%S')
+        report_file="owasp-scan-report-$timestamp.html"
+        target_url="http://${{ steps.get_ip.outputs.vm_ip }}"
+        echo "Running ZAP full scan against: $target_url"
+        docker run --rm --user root \
+          -v $(pwd)/reports:/zap/wrk/:rw \
+          ghcr.io/zaproxy/zaproxy:stable \
+          zap-full-scan.py \
+          -t "$target_url" \
+          -r "$report_file" \
+          -I || true
+        if [ -f "reports/$report_file" ]; then
+          echo "Report generated: reports/$report_file"
+          echo "REPORT_FILE=reports/$report_file" >> $GITHUB_ENV
+        else
+          echo "No report generated. Skipping upload."
+          echo "REPORT_FILE=" >> $GITHUB_ENV
+        fi
 
-      - name: Upload OWASP report to Azure Blob
-        if: env.REPORT_FILE != ''
-        run: |
-          az storage blob upload \
-            --account-name $SA \
-            --container-name reports \
-            --file "$REPORT_FILE" \
-            --name "$(basename "$REPORT_FILE")" \
-            --auth-mode login
-        env:
-          SA: ntmsla1group9185
-          REPORT_FILE: ${{ env.REPORT_FILE }}
+    - name: Upload OWASP report to Azure Blob
+      if: env.REPORT_FILE != ''
+      run: |
+        az storage blob upload \
+          --account-name $SA \
+          --container-name reports \
+          --file "$REPORT_FILE" \
+          --name "$(basename "$REPORT_FILE")" \
+          --auth-mode login
+      env:
+        SA: ntmsla1group9185
+        REPORT_FILE: ${{ env.REPORT_FILE }}
