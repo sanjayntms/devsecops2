@@ -100,26 +100,33 @@ jobs:
         echo "vm_ip=$ip" >> $GITHUB_OUTPUT
  
 
-    - name: Install Docker and Run Juice Shop
+    - name: Install Docker (Snap) and Run Juice Shop
       run: |
        sudo apt-get update -y
        sudo apt-get install -y sshpass
 
        sshpass -p "$VM_PASSWORD" ssh -o StrictHostKeyChecking=no vmadmin@74.225.131.102 <<'EOF'
        sudo apt-get update -y
-       sudo apt-get install -y docker.io
-       sudo systemctl enable docker
-       sudo systemctl start docker
+
+     
+
+       # Install Docker if not installed
+       if ! snap list | grep -q docker; then
+        sudo snap install docker
+       fi
+       sudo snap start docker
 
        # Stop existing Juice Shop container if running
-       sudo docker ps -q --filter "ancestor=bkimminich/juice-shop" | grep -q . && \
+       if sudo docker ps -q --filter "ancestor=bkimminich/juice-shop" | grep -q .; then
         sudo docker stop $(sudo docker ps -q --filter "ancestor=bkimminich/juice-shop")
+       fi
 
        # Start Juice Shop
        sudo docker run --rm -d -p 80:3000 bkimminich/juice-shop
        EOF
     env:
      VM_PASSWORD: ${{ secrets.VM_PASSWORD }}
+
 
 
 
