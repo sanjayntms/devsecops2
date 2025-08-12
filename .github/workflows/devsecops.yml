@@ -76,11 +76,12 @@ jobs:
           echo "VM IP is: $vm_ip"
           echo "vm_ip=$vm_ip" >> $GITHUB_OUTPUT
 
+
   deploy-web-app:
-   needs: terraform-deploy
-   runs-on: ubuntu-latest
-   steps:
-    - name: Checkout Repo
+    runs-on: ubuntu-latest
+
+    steps:
+    - name: Checkout repository
       uses: actions/checkout@v4
 
     - name: Azure Login
@@ -88,81 +89,36 @@ jobs:
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    - name: Get VM Password from Key Vault
-      id: kv
-      uses: azure/get-keyvault-secrets@v1
-      with:
-        keyvault: ${{ env.KEYVAULT_NAME }}
-        secrets: webvm-password
-        creds: ${{ secrets.AZURE_CREDENTIALS }}
-
-    - name: Install and Configure Juice Shop with NGINX
+    - name: Get VM Public IP
+      id: get-ip
       run: |
-        sshpass -p "${{ steps.kv.outputs.webvm-password }}" ssh -o StrictHostKeyChecking=no vmadmin@${{ needs.terraform-deploy.outputs.vm_ip }} <<'EOF'
-          set -e
-          
-          # Update system and install deps
+        IP=$(az vm list-ip-addresses \
+          --resource-group ${{ secrets.AZURE_RG }} \
+          --name ${{ secrets.AZURE_VM }} \
+          --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" \
+          -o tsv)
+        echo "VM_IP=$IP" >> $GITHUB_ENV
+
+    - name: Install Docker and Run Juice Shop
+      run: |
+        ssh -o StrictHostKeyChecking=no ${{ secrets.AZURE_VM_USER }}@${{ env.VM_IP }} <<'EOF'
+          # Install Docker if not already installed
           sudo apt-get update -y
-          sudo apt-get install -y nginx curl unzip nodejs npm
+          sudo apt-get install -y docker.io
+          sudo systemctl enable docker
+          sudo systemctl start docker
 
-          # Remove old /var/www/html contents
-          sudo rm -rf /var/www/html/*
+          # Remove existing Juice Shop containers if running
+          sudo docker ps -q --filter "ancestor=bkimminich/juice-shop" | grep -q . && \
+            sudo docker stop $(sudo docker ps -q --filter "ancestor=bkimminich/juice-shop")
 
-          # Firewall config
-          sudo systemctl enable nginx
-          sudo ufw allow 80
-          sudo ufw allow 22
-          sudo ufw --force enable
-
-          # Install Juice Shop from GitHub release
-          sudo rm -rf /opt/juice-shop
-          sudo mkdir -p /opt/juice-shop
-          cd /opt/juice-shop
-          curl -L https://github.com/juice-shop/juice-shop/releases/latest/download/juice-shop-archive.zip -o juice-shop.zip
-          unzip juice-shop.zip
-          rm juice-shop.zip
-          npm install --production
-
-          # Create systemd service for Juice Shop
-          sudo bash -c 'cat >/etc/systemd/system/juice-shop.service' <<'SERVICE'
-          [Unit]
-          Description=OWASP Juice Shop
-          After=network.target
-
-          [Service]
-          WorkingDirectory=/opt/juice-shop
-          ExecStart=/usr/bin/npm start
-          Restart=always
-          User=www-data
-          Environment=NODE_ENV=production
-
-          [Install]
-          WantedBy=multi-user.target
-          SERVICE
-
-          sudo systemctl daemon-reload
-          sudo systemctl enable juice-shop
-          sudo systemctl start juice-shop
-
-          # Configure NGINX reverse proxy to Juice Shop
-          sudo bash -c 'cat >/etc/nginx/sites-available/default' <<'NGINXCONF'
-          server {
-              listen 80;
-              server_name _;
-
-              location / {
-                  proxy_pass http://localhost:3000;
-                  proxy_http_version 1.1;
-                  proxy_set_header Upgrade $http_upgrade;
-                  proxy_set_header Connection 'upgrade';
-                  proxy_set_header Host $host;
-                  proxy_cache_bypass $http_upgrade;
-              }
-          }
-          NGINXCONF
-
-          sudo systemctl restart nginx
+          # Run Juice Shop
+          sudo docker run --rm -d -p 80:3000 bkimminich/juice-shop
         EOF
+
+    - name: Print Access Info
+      run: echo "Juice Shop is now available at http://${{ env.VM_IP }}"
+
 
   owasp-scan:
     needs: deploy-web-app
