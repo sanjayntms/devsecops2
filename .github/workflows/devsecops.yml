@@ -79,7 +79,7 @@ jobs:
 
   deploy-web-app:
     runs-on: ubuntu-latest
-
+    needs: terraform-deploy 
     steps:
     - name: Checkout repository
       uses: actions/checkout@v4
