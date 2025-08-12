@@ -89,15 +89,15 @@ jobs:
       with:
         creds: ${{ secrets.AZURE_CREDENTIALS }}
 
-    - name: Get VM Public IP
-      id: get-ip
+    - name: Get VM Public IP from Azure
+      id: get_ip
       run: |
-        IP=$(az vm list-ip-addresses \
-          --resource-group ${{ secrets.AZURE_RG }} \
-          --name ${{ secrets.AZURE_VM }} \
-          --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" \
-          -o tsv)
-        echo "VM_IP=$IP" >> $GITHUB_ENV
+          ip=$(az vm list-ip-addresses \
+            --resource-group $RESOURCE_GROUP \
+            --name webvm \
+            --query "[0].virtualMachine.network.publicIpAddresses[0].ipAddress" \
+            -o tsv)
+          echo "vm_ip=$ip" >> $GITHUB_OUTPUT
 
     - name: Install Docker and Run Juice Shop
       run: |
